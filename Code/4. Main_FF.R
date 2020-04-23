@@ -56,56 +56,39 @@ models_1_2 <- function(returns) {
 # function to calculate models 3-5 with different X covariate matrices and penalties
 mods_3_5 <- function(Y, X, folds, penalty, mod){
   
-  # function to calculate by alpha the minimizing lambda and MSE
-  min_lam <- function(a) {
+  # function to get the minimizing values by alpha
+  bya <- function(a) {
     
-    # store lambda, mse values from our 10 k-folds
-    lambda <- do.call(rbind, 
-                      lapply(1:10, function(j) {
-                        # run a cross-validated penalized regression with a on fold j
-                        cv <- cv.glmnet(X[1:250, ], Y[1:250], foldid = folds[, j], alpha = a, penalty.factor = penalty)
-                        # save in a dataframe and merge together
-                        data.frame(cv$lambda, cv$cvm, j)
-                      }
-                      )
-    )
-    
-    # Find the lambda and fold that minimizes MSE for each level of alpha
-    min_lambda <- lambda %>% 
-      # bring in the minmium standard error values
-      left_join(., lambda %>% group_by(cv.lambda) %>% summarize(mean = mean(cv.cvm))) %>% 
-      # by fold find the values of lambda that minimizes mean squared error
-      group_by(j) %>% 
-      arrange(cv.cvm) %>% 
-      slice(1) %>% 
-      ungroup() %>% 
-      arrange(mean) %>% 
-      slice(1) %>% 
-      select(cv.lambda, j)
-    
-    # pull a, lambda*, the mse, and the fold
-    c(a, min_lambda$cv.lambda, 
-      min(cv.glmnet(X[1:250, ], Y[1:250], foldid = folds[, min_lambda$j],
-                    alpha = a, penalty.factor = penalty)$cvm), min_lambda$j)
+    # subfunction to calculate by k-fold
+    byfold <- function(j) {
+      
+      # estimate cross validated glmnet on fold with alpha = a and get the cv error by lambda
+      tibble(a = a,
+             fold = j,
+             lambda = cv.glmnet(X[1:250, ], Y[1:250], foldid = folds[, j], alpha = a, penalty.factor = penalty)$lambda,
+             cv = cv.glmnet(X[1:250, ], Y[1:250], foldid = folds[, j], alpha = a, penalty.factor = penalty)$cvm)
+    }
+    # estimate for folds 1:10
+    data_a <- map_dfr(1:10, byfold)
   }
+  # estimate over a in 0 to 1, by 0.1
+  full_mat <- map_dfr(seq(0, 1, by = 0.1), bya)
   
-  # get table by alpha of the minimizing values
-  table <- do.call(rbind, lapply(seq(0.1, 1, 0.1), min_lam))
-  
-  # pull the out of sample squared prediction error from the best model
-  # set colnames
-  colnames(table) <- c("alpha", "lambda", "mse", "j")
-  table <- as.data.frame(table) %>% 
-    # get the global mean squared error
-    arrange(mse) %>% 
+  # average over the set of k-folds and get the values of alpha, lambda that minimze mean MSE
+  table <- full_mat %>% 
+    group_by(a, lambda) %>% 
+    summarize(mean = mean(cv)) %>% 
+    ungroup() %>% 
+    arrange(mean) %>% 
     slice(1)
   
+  # output results
   out <- tibble(
     model = rep(mod, 251), 
     day = 1:251,
     actual = Y[1:251], 
-    pred = predict(cv.glmnet(X[1:250, ], Y[1:250], foldid = folds[, table$j], alpha = table$alpha,
-                             penalty.factor = penalty), X[1:251, ], s = table$lambda, exact = T), 
+    pred = as.numeric(predict(glmnet(X[1:250, ], Y[1:250], alpha = table$a, 
+                                     penalty.factor = penalty), X[1:251, ], s = table$lambda, exact = T)), 
     resid = actual - pred
   )
   out
@@ -114,30 +97,28 @@ mods_3_5 <- function(Y, X, folds, penalty, mod){
 # model 6 - 1 peer index through regularization
 mod_6 <- function(Y, X, folds, returns, mod) {
   
-  # store lambda, mse values from our 10 k-folds
-  lambda <- 
-    do.call(rbind, 
-            lapply(1:10, function(j) {
-              cv <- cv.glmnet(X[1:250, ], Y[1:250], foldid = folds[, j], alpha = 1)
-              data.frame(cv$lambda, cv$cvm, j)
-            }
-            )
-    )
+  # function to calculate by k-fold
+  byfold <- function(j) {
+    
+    # estimate cross validated glmnet on fold with alpha = 1 and get the cv error by lambda
+    tibble(fold = j,
+           lambda = cv.glmnet(X[1:250, ], Y[1:250], foldid = folds[, j], alpha = 1)$lambda,
+           cv = cv.glmnet(X[1:250, ], Y[1:250], foldid = folds[, j], alpha = 1)$cvm)
+  }
   
-  # Find the lambda and fold that minimizes MSE
-  min_lambda <- lambda %>% 
-    left_join(., lambda %>% group_by(cv.lambda) %>% summarize(mean = mean(cv.cvm))) %>% 
-    group_by(j) %>% 
-    arrange(cv.cvm) %>% 
-    slice(1) %>% 
+  # estimate over a in 0 to 1, by 0.1
+  full_mat <- map_dfr(1:10, byfold)
+  
+  # average over the set of k-folds and get the values of alpha, lambda that minimze mean MSE
+  table <- full_mat %>% 
+    group_by(lambda) %>% 
+    summarize(mean = mean(cv)) %>% 
     ungroup() %>% 
     arrange(mean) %>% 
-    slice(1) %>% 
-    select(cv.lambda, j)
+    slice(1)
   
   # get the beta coefficients from the minimizing regression
-  betas <- predict(cv.glmnet(X[1:250, ], Y[1:250], foldid = folds[, min_lambda$j], alpha = 1),
-                   type = "coefficient", s = "lambda.min", exact = T)
+  betas <- coef(glmnet(X[1:250, ], Y[1:250], alpha = 1), s = table$lambda)
   
   # get nonzero columns
   cols <- which(betas[-1] != 0) + 1
@@ -145,12 +126,12 @@ mod_6 <- function(Y, X, folds, returns, mod) {
   # create matrix with non-zero weighted firms if any
   if (length(cols) > 0) {
     XX <- cbind(1, 
-                returns[1:251, c("mkt", "smb", "hml", "umd")], 
+                returns[1:251, "mkt"], 
                 peer = apply(as.matrix(returns[1:251, cols], nrow = 251), 1,  
-                      function(x) log(mean(exp(x) - 1) + 1))) %>% as.matrix()
+                             function(x) log(mean(exp(x) - 1) + 1))) %>% as.matrix()
   } else {
     XX <- cbind(1, 
-                returns[1:251, c("mkt", "smb", "hml", "umd")]) %>% as.matrix()
+                returns[1:251, "mkt"]) %>% as.matrix()
   }
   
   # get the beta coefficients
@@ -219,7 +200,7 @@ models_7_8 <- function(returns) {
   
   # manually create a hyperparameter grid. Test alpha [0.1, 1] and get the lambda estimation sequence
   # from glmnet (has a formula to calculate an effective range)
-  grid <- do.call(rbind, lapply(seq(0.1, 1, 0.1),
+  grid <- do.call(rbind, lapply(seq(0, 1, 0.1),
                                 function(a) {
                                   expand.grid(
                                     alpha = a,
@@ -237,7 +218,7 @@ models_7_8 <- function(returns) {
                         tuneGrid = grid)
   
   # calculate the hyperparameter grid for all alphas for full model
-  grid <- do.call(rbind, lapply(seq(0.1, 1, 0.1),
+  grid2 <- do.call(rbind, lapply(seq(0, 1, 0.1),
                                 function(a) {
                                   expand.grid(
                                     alpha = a,
@@ -250,7 +231,7 @@ models_7_8 <- function(returns) {
                         method = "glmnet",
                         family = "gaussian",
                         trControl = myTimeControl,
-                        tuneGrid = grid)
+                        tuneGrid = grid2)
   #save the residuals
   out <- bind_rows(
     tibble(
@@ -276,28 +257,35 @@ mod_9 <- function(returns) {
   X <- returns[, -1] %>% as.matrix()
   Y <- returns[, 1] %>% as.matrix()
   
-  # store lambda, mse values from our 10 k-folds
-  lambda <- do.call(rbind,
-                    lapply(1:10, function(j) {
-                      # run a cross-validated penalized regression with a on fold j
-                      cv <- cv.glmnet(X[1:250, ], Y[1:250], foldid = folds[, j], alpha = 1)
-                      # save in a dataframe and merge together
-                      data.frame(cv$lambda, cv$cvm, j)
-                    }
-                    )
-  )
+  # function to calculate by k-fold
+  byfold <- function(j) {
+    
+    # estimate cross validated glmnet on fold with alpha = 1 and get the cv error by lambda
+    tibble(fold = j,
+           lambda = cv.glmnet(X[1:250, ], Y[1:250], foldid = folds[, j], alpha = 1)$lambda,
+           cv = cv.glmnet(X[1:250, ], Y[1:250], foldid = folds[, j], alpha = 1)$cvm)
+  }
   
-  # pick fold based on the minimum MSE 
-  jmin <- lambda %>% arrange(cv.cvm) %>% slice(1) %>% pull(j)
-  preds <- predict(cv.glmnet(X[1:250, ], Y[1:250], foldid = folds[, jmin], alpha = 1), 
-                   X[1:251, ], s = "lambda.min", exact = T)
+  # estimate over a in 0 to 1, by 0.1
+  full_mat <- map_dfr(1:10, byfold)
+  
+  # average over the set of k-folds and get the values of alpha, lambda that minimze mean MSE
+  table <- full_mat %>% 
+    group_by(lambda) %>% 
+    summarize(mean = mean(cv)) %>% 
+    ungroup() %>% 
+    arrange(mean) %>% 
+    slice(1)
+  
+  preds <- as.numeric(predict(glmnet(X[1:250, ], Y[1:250], alpha = 1), 
+                              X[1:251, ], s = table$lambda, exact = T))
   
   # estimate model with the fold and minimum lambda
   out <- tibble(
     model = rep(9, 251), 
     day = 1:251,
     actual = Y[1:251], 
-    pred = preds %>% as.numeric, 
+    pred = preds, 
     resid = actual - pred
   )
   out

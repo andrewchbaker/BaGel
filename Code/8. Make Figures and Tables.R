@@ -15,7 +15,7 @@ library(parallel)
 theme_set(theme_clean() + theme(plot.background = element_blank()))
 
 # set output path for overleaf
-outpath <- "/Users/Andrew/Dropbox/Apps/Overleaf/Baker Gelbach September 2 2019-v0"
+outpath <- ""
 
 ###################################################################################################
 # TASK: Make TSCV plot                                        								                    #
@@ -102,6 +102,7 @@ p2 <- sims %>%
       substr(as.character(name), nchar(as.character(name)) - 3,nchar(as.character(name))) == "-FFC", 
       "FFC", 
       "No FFC"),
+    type = factor(type, levels = c("No FFC", "FFC")),
     # Get the root of the model in a variable name
     name_root = ifelse(
       type == "FFC", 
@@ -147,6 +148,7 @@ plot_levels <- sims %>%
       substr(as.character(name), nchar(as.character(name)) - 3,nchar(as.character(name))) == "-FFC", 
       "FFC", 
       "No FFC"),
+    type = factor(type, levels = c("No FFC", "FFC")),
     # Get the root of the model in a variable name
     name_root = ifelse(
       type == "FFC", 
@@ -181,6 +183,7 @@ p3 <- plotdata %>%
       substr(as.character(name), nchar(as.character(name)) - 3,nchar(as.character(name))) == "-FFC", 
       "FFC", 
       "No FFC"),
+    type = factor(type, levels = c("No FFC", "FFC")),
     name_root = ifelse(
       type == "FFC", 
       substr(as.character(name), 1, nchar(as.character(name)) - 4),
@@ -268,6 +271,7 @@ p4 <- parametric_table %>%
     type = ifelse(substr(as.character(Model), nchar(as.character(Model)) - 3,nchar(as.character(Model))) == "-FFC", 
                   "FFC", 
                   "No FFC"),
+    type = factor(type, levels = c("No FFC", "FFC")),
     name_root = ifelse(type == "FFC", 
                        substr(as.character(Model), 1, nchar(as.character(Model)) - 4),
                        as.character(Model))) %>% 
@@ -307,6 +311,7 @@ p5 <- sq_table %>%
     type = ifelse(substr(as.character(Model), nchar(as.character(Model)) - 3,nchar(as.character(Model))) == "-FFC", 
                   "FFC", 
                   "No FFC"),
+    type = factor(type, levels = c("No FFC", "FFC")),
     name_root = ifelse(type == "FFC", 
                        substr(as.character(Model), 1, nchar(as.character(Model)) - 4),
                        as.character(Model))) %>% 
@@ -343,6 +348,7 @@ p6 <- sims %>%
       substr(as.character(name), nchar(as.character(name)) - 3,nchar(as.character(name))) == "-FFC", 
       "FFC", 
       "No FFC"),
+    type = factor(type, levels = c("No FFC", "FFC")),
     # Get the root of the model in a variable name
     name_root = ifelse(
       type == "FFC", 
@@ -428,6 +434,7 @@ p7 <- sims %>%
       substr(as.character(name), nchar(as.character(name)) - 3,nchar(as.character(name))) == "-FFC", 
       "FFC", 
       "No FFC"),
+    type = factor(type, levels = c("No FFC", "FFC")),
     # Get the root of the model in a variable name
     name_root = ifelse(
       type == "FFC", 
@@ -472,6 +479,7 @@ plot_levels <- sims %>%
       substr(as.character(name), nchar(as.character(name)) - 3,nchar(as.character(name))) == "-FFC", 
       "FFC", 
       "No FFC"),
+    type = factor(type, levels = c("No FFC", "FFC")),
     # Get the root of the model in a variable name
     name_root = ifelse(
       type == "FFC", 
@@ -506,6 +514,7 @@ p8 <- plotdata %>%
       substr(as.character(name), nchar(as.character(name)) - 3,nchar(as.character(name))) == "-FFC", 
       "FFC", 
       "No FFC"),
+    type = factor(type, levels = c("No FFC", "FFC")),
     name_root = ifelse(
       type == "FFC", 
       substr(as.character(name), 1, nchar(as.character(name)) - 4),
@@ -531,7 +540,6 @@ ggsave(filename =  paste(outpath, "squared_normalized_error_fc.png", sep = "/"),
 #####################################################################################################
 # TASK: 	Sankey Plots     								                              
 #####################################################################################################
-
 #model names
 no_ff <- c("MM", "MMPI", "ENR", "ENR-U", "ENR-FMI", "ENR-LEW", 
            "ENR-TSCV", "ENR-TSCV-U", "LASSO", "SYNTH", "ID")
@@ -636,7 +644,6 @@ fig2_ffc <- ranking_fig2(sims_ff, sims_ff_fc)
 makeplot <- function(data, figure) {
   
   data %>% 
-    mutate(name = str_remove(name, "-FFC")) %>% 
     mutate(hjust = ifelse(df == 0, 1, 0)) %>% 
     ggplot(aes(x = as.factor(df), y = -rank, group = name)) + 
     geom_line(aes(color = name), show.legend = FALSE) +
@@ -659,10 +666,10 @@ plot2 <- makeplot(fig1_ffc, "\\widehat{R}_{oos}^k & FFC")
 plot3 <- makeplot(fig2_no_ffc, "\\widehat{R}_{het}^k & No FFC")
 plot4 <- makeplot(fig2_ffc, "\\widehat{R}_{het}^k & FFC")
 
-p10 <- plot1 + plot2 + plot3 + plot4 + plot_layout(nrow = 2)
+p9 <- plot1 + plot2 + plot3 + plot4 + plot_layout(nrow = 2)
 
 # save
-ggsave(filename =  paste(outpath, "sankey_plots.png", sep = "/"), p10, dpi = 500,
+ggsave(filename =  paste(outpath, "sankey_plots.png", sep = "/"), p9, dpi = 500,
        width = 8, height = 6, units = "in")
 
 #####################################################################################################
@@ -687,7 +694,7 @@ plot2data <- bind_rows(fig2_ffc, fig2_no_ffc,
   ))
 
 # plot
-p11 <- plot2data %>% 
+p10 <- plot2data %>% 
   ggplot(aes(x = fct_reorder(name, -totalmean), y = totalmean)) + 
   geom_point(aes(y = rank), color = "gray", position = "jitter", size = 4) + 
   geom_point(aes(x = name, y = totalmean, fill = color, group = color),
@@ -704,7 +711,7 @@ p11 <- plot2data %>%
   guides(x = guide_axis(n.dodge = 2))
 
 # save
-ggsave(filename =  paste(outpath, "model_ranks.png", sep = "/"), p11, dpi = 500,
+ggsave(filename =  paste(outpath, "model_ranks.png", sep = "/"), p10, dpi = 500,
        width = 8, height = 6, units = "in")
 
 #####################################################################################################
@@ -946,5 +953,52 @@ ggsave(filename =  paste(outpath, "rejection_plot_bytest.png", sep = "/"), rejec
 ggsave(filename =  paste(outpath, "rejection_plot_bymod.png", sep = "/"), rejection_plot2, dpi = 500,
        width = 8, height = 6, units = "in")
 
+#########################################################################################################
+### MAKE POWER PLOTS [-1%, 1%] ##########################################################################
+#########################################################################################################
 
+# plot rejections holding test constant
+rejection_plot <- pp %>% 
+  ungroup() %>% 
+  filter(c %>% between(-0.01, 0.01)) %>% 
+  mutate(model = str_remove(model, "_RESID"),
+         test = factor(test, levels = c("UNADJ", "BMP", "ADJ_BMP")),
+         model = factor(model, levels = c("MM", "MMPI", "ENR_U", "LASSO", "ID"))) %>% 
+  ggplot(aes(x = c, y = rejection, group = model, linetype = model, shape = model, color = model)) + 
+  geom_point(size = 2) + geom_line(size = 2) + 
+  scale_y_continuous(labels = percent) + 
+  scale_color_brewer(palette = 'Set1') + 
+  labs(x = "Imputed Level of Abnormal Return", y = "Rejection Frequency") + 
+  facet_wrap(~test, ncol = 3) + 
+  theme(legend.position = 'bottom', 
+        legend.title = element_blank(),
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 18),
+        strip.text = element_text(size = 20))
+
+# plot rejections holding specification constant
+rejection_plot2 <- pp %>% 
+  ungroup() %>% 
+  filter(c %>% between(-0.01, 0.01)) %>% 
+  mutate(model = str_remove(model, "_RESID"),
+         test = factor(test, levels = c("UNADJ", "BMP", "ADJ_BMP")),
+         model = factor(model, levels = c("MM", "MMPI", "ENR_U", "LASSO", "ID"))) %>% 
+  ggplot(aes(x = c, y = rejection, group = test, linetype = test, shape = test, color = test)) + 
+  geom_point(size = 2) + geom_line(size = 2) + 
+  scale_y_continuous(labels = percent) + 
+  scale_color_brewer(palette = 'Set1') + 
+  labs(x = "Imputed Level of Abnormal Return", y = "Rejection Frequency") + 
+  facet_wrap(~model, nrow = 3) + 
+  theme(legend.position = 'bottom', 
+        legend.title = element_blank(),
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 16),
+        strip.text = element_text(size = 18))
+
+#save
+ggsave(filename =  paste(outpath, "rejection_plot_bytest_1p.png", sep = "/"), rejection_plot, dpi = 500,
+       width = 12, height = 6, units = "in")
+
+ggsave(filename =  paste(outpath, "rejection_plot_bymod_1p.png", sep = "/"), rejection_plot2, dpi = 500,
+       width = 8, height = 6, units = "in")
 

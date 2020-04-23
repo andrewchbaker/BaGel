@@ -8,6 +8,7 @@ library(MCPanel)
 library(glmnet)
 library(scales)
 library(ggthemes)
+library(pbapply)
 
 # read in files
 crsp <- read_csv(here::here("Data", "crsp.csv"))
@@ -179,7 +180,7 @@ clusterExport(cl, c("crsp", "sp500", "ff", "trade_dates", "rand_dates",
 clusterEvalQ(cl, c(library(tidyverse), library(lubridate), library(here)))
 
 ## run the command on the clusters
-sims <- do.call(rbind, parLapply(cl, 1:1000, get_portfolio))
+sims <-  do.call(rbind, pblapply(cl = cl, X = 1:1000, FUN = get_portfolio))
 stopCluster(cl)
 
 # save intermediate file
@@ -239,52 +240,34 @@ ENR_U <- function(dt, d1, d2){
   X_est <- dt[dateobs, -c(1:2)] %>% as.matrix()
   X <- dt[, -c(1:2)] %>% as.matrix()
 
-  # function to calculate by alpha the minimizing lambda and MSE
-  min_lam <- function(a) {
-
-    # store lambda, mse values from our 10 k-folds
-    lambda <- do.call(rbind,
-                      lapply(1:10, function(j) {
-                        # run a cross-validated penalized regression with a on fold j
-                        cv <- cv.glmnet(X_est, Y_est, foldid = folds[, j], alpha = a)
-                        # save in a dataframe and merge together
-                        data.frame(cv$lambda, cv$cvm, j)
-                      }
-                      )
-    )
-
-    # Find the lambda and fold that minimizes MSE for each level of alpha
-    min_lambda <- lambda %>%
-      # bring in the minmium standard error values
-      left_join(., lambda %>% group_by(cv.lambda) %>% summarize(mean = mean(cv.cvm))) %>%
-      # by fold find the values of lambda that minimizes mean squared error
-      group_by(j) %>%
-      arrange(cv.cvm) %>%
-      slice(1) %>%
-      ungroup() %>%
-      arrange(mean) %>%
-      slice(1) %>%
-      select(cv.lambda, j)
-
-    # pull a, lambda*, the mse, and the fold
-    c(a, min_lambda$cv.lambda,
-      min(cv.glmnet(X_est, Y_est, foldid = folds[, min_lambda$j],
-                    alpha = a)$cvm), min_lambda$j)
+  # function to get the minimizing values by alpha
+  bya <- function(a) {
+    
+    # subfunction to calculate by k-fold
+    byfold <- function(j) {
+      
+      # estimate cross validated glmnet on fold with alpha = a and get the cv error by lambda
+      tibble(a = a,
+             fold = j,
+             lambda = cv.glmnet(X_est, Y_est, foldid = folds[, j], alpha = a)$lambda,
+             cv = cv.glmnet(X_est, Y_est, foldid = folds[, j], alpha = a)$cvm)
+    }
+    # estimate for folds 1:10
+    data_a <- map_dfr(1:10, byfold)
   }
-
-  # get table by alpha of the minimizing values
-  table <- do.call(rbind, lapply(seq(0.1, 1, 0.1), min_lam))
-
-  # pull the out of sample squared prediction error from the best model
-  # set colnames
-  colnames(table) <- c("alpha", "lambda", "mse", "j")
-  table <- as.data.frame(table) %>%
-    # get the global mean squared error
-    arrange(mse) %>%
+  # estimate over a in 0 to 1, by 0.1
+  full_mat <- map_dfr(seq(0, 1, by = 0.1), bya)
+  
+  # average over the set of k-folds and get the values of alpha, lambda that minimze mean MSE
+  table <- full_mat %>% 
+    group_by(a, lambda) %>% 
+    summarize(mean = mean(cv)) %>% 
+    ungroup() %>% 
+    arrange(mean) %>% 
     slice(1)
-
-  return(predict(cv.glmnet(X_est, Y_est, foldid = folds[, table$j], alpha = table$alpha),
-                 X, s = table$lambda, exact = T)[, 1])
+  
+  return(as.numeric(predict(glmnet(X_est, Y_est, alpha = table$a), 
+                            X, s = table$lambda, exact = T)))
 }
 
 # lasso model
@@ -303,21 +286,28 @@ LASSO <- function(dt, d1, d2) {
   X_est <- dt[dateobs, -c(1:2)] %>% as.matrix()
   X <- dt[, -c(1:2)] %>% as.matrix()
 
-  # store lambda, mse values from our 10 k-folds
-  lambda <- do.call(rbind,
-                    lapply(1:10, function(j) {
-                      # run a cross-validated penalized regression with a on fold j
-                      cv <- cv.glmnet(X_est, Y_est, foldid = folds[, j], alpha = 1)
-                      # save in a dataframe and merge together
-                      data.frame(cv$lambda, cv$cvm, j)
-                    }
-                    )
-  )
-
-  # pick fold based on the minimum MSE
-  jmin <- lambda %>% arrange(cv.cvm) %>% slice(1) %>% pull(j)
-  return(predict(cv.glmnet(X_est, Y_est, foldid = folds[, jmin], alpha = 1),
-                 X, s = "lambda.min", exact = T)[, 1])
+  # function to calculate by k-fold
+  byfold <- function(j) {
+    
+    # estimate cross validated glmnet on fold with alpha = 1 and get the cv error by lambda
+    tibble(fold = j,
+           lambda = cv.glmnet(X_est, Y_est, foldid = folds[, j], alpha = 1)$lambda,
+           cv = cv.glmnet(X_est, Y_est, foldid = folds[, j], alpha = 1)$cvm)
+  }
+  
+  # estimate over a in 0 to 1, by 0.1
+  full_mat <- map_dfr(1:10, byfold)
+  
+  # average over the set of k-folds and get the values of alpha, lambda that minimze mean MSE
+  table <- full_mat %>% 
+    group_by(lambda) %>% 
+    summarize(mean = mean(cv)) %>% 
+    ungroup() %>% 
+    arrange(mean) %>% 
+    slice(1)
+  
+  return(as.numeric(predict(glmnet(X_est, Y_est, alpha = 1), 
+                            X, s = table$lambda, exact = T)))
 }
 
 # function to calculate log avereage
@@ -386,9 +376,9 @@ clusterExport(cl, c("crsp", "sims", "MM", "MMPI", "ID", "ENR_U", "LASSO",
 # export needed programs
 clusterEvalQ(cl, c(library(tidyverse), library(lubridate), library(here),
                    library(MCPanel), library(glmnet)))
-
+  
 ## run the command on the clusters
-out <- do.call(rbind, parLapply(cl, 1:1000, run_sim))
+out <- do.call(rbind, pblapply(cl = cl, X = 1:1000, FUN = run_sim))
 stopCluster(cl)
 saveRDS(out, file = here::here("Output", "out.rds"))
 
