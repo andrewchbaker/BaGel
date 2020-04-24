@@ -349,7 +349,8 @@ estimate_models <- function(dt) {
     arrange(date)
 
   # estimate models
-  tibble(MM = MM(returns, min_estimation_date, max_estimation_date),
+  tibble(peer_index = returns %>% pull(peer_index),
+         MM = MM(returns, min_estimation_date, max_estimation_date),
          MMPI = MMPI(returns, min_estimation_date, max_estimation_date),
          ID = ID(returns, max_estimation_date),
          ENR_U = ENR_U(returns, min_estimation_date, max_estimation_date),
