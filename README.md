@@ -1,4 +1,4 @@
-# eventstudy
+# BaGel
 Codes to replicate analysis in Baker &amp; Gelbach (2020)
 
 1. Download Data.py - downloads all of the data for this study from the wrds server. You need to put in your account details. 
@@ -15,4 +15,4 @@ Codes to replicate analysis in Baker &amp; Gelbach (2020)
 
 7. Cross-Sectional Sims.R - This file runs the cross-sectional event study simulations. 
 
-8., Make Figures and Tables.R - This file creates all of the figures and tables in the paper with the results of the prior code.
+8. Make Figures and Tables.R - This file creates all of the figures and tables in the paper with the results of the prior code.
